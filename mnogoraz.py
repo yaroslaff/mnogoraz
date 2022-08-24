@@ -8,7 +8,7 @@ import shlex
 from contextlib import closing
 from dotenv import load_dotenv
 import datetime
-
+import traceback
 
 load_dotenv()
 bot = telebot.TeleBot(os.getenv('API_TOKEN'))
@@ -29,80 +29,86 @@ def cmd_admin(message):
     cmd = args[1] if len(args)>1 else None
     print(f"ADMIN {args}")
     
+    try:
+
+        if cmd == 'everyn':
+            everyn = int(args[2])
+
+            with closing(sqlite3.connect(dbfile)) as connection:
+                with closing(connection.cursor()) as cursor:
+                    cursor.execute("UPDATE place SET everyn=? WHERE owner=?", (everyn, u.id))
+                connection.commit()
+
+        elif cmd == 'regplace':
+            place = args[2]
+            with closing(sqlite3.connect(dbfile)) as connection:
+                with closing(connection.cursor()) as cursor:
+                    n = cursor.execute("SELECT COUNT(1) FROM place WHERE owner=?", (u.id, )).fetchone()[0]
+
+                    if n>0:
+                        bot.send_message(chatid, f"Cannot register new place, you already have {n}")
+                        return
+
+                    cursor.execute("INSERT INTO place (name, owner, everyn) VALUES (?, ?, ?)",
+                    (place, u.id, 100)
+                )
+                connection.commit()
+            bot.send_message(chatid, f"Registered place {place}")
+
+        elif cmd == 'place':
+            with closing(sqlite3.connect(dbfile)) as connection:
+                with closing(connection.cursor()) as cursor:
+                    r = cursor.execute("SELECT name, desc, everyn FROM place WHERE owner=?", (u.id,)).fetchone()
+                    if r is None:
+                        bot.send_message(chatid, "You have no place")
+                        return
+
+                    s = f'''
+    Name: {r[0]}
+    Desc: {r[1]}
+    EveryN: {r[2]}
+    '''
+            bot.send_message(chatid, s)
+
+        elif cmd == 'go':
+            person = args[2]
+            with closing(sqlite3.connect(dbfile)) as connection:
+                with closing(connection.cursor()) as cursor:
+                    placeid, everyn = cursor.execute("SELECT id, everyn FROM place WHERE owner=?", (u.id, )).fetchone()
+                    r = cursor.execute("INSERT INTO visit (place_id, person, ts) VALUES (?, ?, ?)", (placeid, person, datetime.datetime.now()))
+                    nvisits = cursor.execute("SELECT COUNT(1) FROM visit WHERE place_id=? AND person=?", (placeid, person )).fetchone()[0]
+                    bot.send_message(chatid, f"Visit recorded. This is visit {nvisits}")
+                    if nvisits % everyn == 0:
+                        bot.send_message(chatid, "This is BONUS visit!")
+
+                connection.commit()
+
+        elif cmd == 'info':
+            person = args[2]
+            with closing(sqlite3.connect(dbfile, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)) as connection:
+                with closing(connection.cursor()) as cursor:
+                    placeid = cursor.execute("SELECT id FROM place WHERE owner=?", (u.id, )).fetchone()[0]
+                    visits = cursor.execute("SELECT ts FROM visit WHERE place_id=?", (placeid, )).fetchall()
+                    for v in visits:
+                        s+= f'{v[0].strftime("%Y-%m-%d %H:%M")}\n'
+            bot.send_message(chatid, s)
 
 
-    if cmd == 'everyn':
-        everyn = int(args[2])
+        else:
+            bot.send_message(chatid, f'''
+    /admin subcommands:
+    /admin regplace PLACE - register new place
+    /admin place - show info about place
+    /admin everyn N - report every Nth visit 
+    /admin go PERSON - record customer visit
+    /admin info PERSON - show info about customer
+    ''')
 
-        with closing(sqlite3.connect(dbfile)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("UPDATE place SET everyn=? WHERE owner=?", (everyn, u.id))
-            connection.commit()
+    except Exception as e:
+        print("EXC", e)
+        print(traceback.format_exc())
+        bot.send_message(chatid, 'Error...')
 
-    elif cmd == 'regplace':
-        place = args[2]
-        with closing(sqlite3.connect(dbfile)) as connection:
-            with closing(connection.cursor()) as cursor:
-                n = cursor.execute("SELECT COUNT(1) FROM place WHERE owner=?", (u.id, )).fetchone()[0]
-
-                if n>0:
-                    bot.send_message(chatid, f"Cannot register new place, you already have {n}")
-                    return
-
-                cursor.execute("INSERT INTO place (name, owner, everyn) VALUES (?, ?, ?)",
-                (place, u.id, 100)
-            )
-            connection.commit()
-        bot.send_message(chatid, f"Registered place {place}")
-
-    elif cmd == 'place':
-        with closing(sqlite3.connect(dbfile)) as connection:
-            with closing(connection.cursor()) as cursor:
-                r = cursor.execute("SELECT name, desc, everyn FROM place WHERE owner=?", (u.id,)).fetchone()
-                if r is None:
-                    bot.send_message(chatid, "You have no place")
-                    return
-
-                s = f'''
-Name: {r[0]}
-Desc: {r[1]}
-EveryN: {r[2]}
-'''
-        bot.send_message(chatid, s)
-
-    elif cmd == 'go':
-        person = args[2]
-        with closing(sqlite3.connect(dbfile)) as connection:
-            with closing(connection.cursor()) as cursor:
-                placeid, everyn = cursor.execute("SELECT id, everyn FROM place WHERE owner=?", (u.id, )).fetchone()
-                r = cursor.execute("INSERT INTO visit (place_id, person, ts) VALUES (?, ?, ?)", (placeid, person, datetime.datetime.now()))
-                nvisits = cursor.execute("SELECT COUNT(1) FROM visit WHERE place_id=? AND person=?", (placeid, person )).fetchone()[0]
-                bot.send_message(chatid, f"Visit recorded. This is visit {nvisits}")
-                if nvisits % everyn == 0:
-                    bot.send_message(chatid, "This is BONUS visit!")
-
-            connection.commit()
-
-    elif cmd == 'info':
-        person = args[2]
-        with closing(sqlite3.connect(dbfile, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)) as connection:
-            with closing(connection.cursor()) as cursor:
-                placeid = cursor.execute("SELECT id FROM place WHERE owner=?", (u.id, )).fetchone()[0]
-                visits = cursor.execute("SELECT ts FROM visit WHERE place_id=?", (placeid, )).fetchall()
-                for v in visits:
-                    s+= f'{v[0].strftime("%Y-%m-%d %H:%M")}\n'
-        bot.send_message(chatid, s)
-
-
-    else:
-        bot.send_message(chatid, f'''
-/admin subcommands:
-  /admin regplace PLACE - register new place
-  /admin place - show info about place
-  /admin everyn N - report every Nth visit 
-  /admin go PERSON - record customer visit
-  /admin info PERSON - show info about customer
-''')
 
 
 
