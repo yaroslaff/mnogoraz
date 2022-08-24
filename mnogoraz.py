@@ -15,8 +15,12 @@ bot = telebot.TeleBot(os.getenv('API_TOKEN'))
 
 dbname = None
 
-@bot.message_handler(commands=['admin'])
+@bot.message_handler(commands=['admin', 'a'])
 def cmd_admin(message):
+    """ shop admin messages """
+
+    printlog(message)
+
     s = ''
     u = message.from_user
     chatid = message.chat.id
@@ -112,13 +116,16 @@ def cmd_g(message):
     
 
 
+def printlog(message):
+    u = message.from_user.id
+    print(f"{u}: {message.text}")
 
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
+    printlog(message)
     bot.send_message(message.chat.id, """\
 /help - 
-/regplace PLACE
-/dump
+/a regplace PLACE
 """)
 
 
@@ -126,6 +133,9 @@ def cmd_help(message):
 
 @bot.message_handler(commands=['super'])
 def cmd_super(message):
+    """ super-admin commands (for developer) """
+    
+    printlog(message)
 
     s = ''
 
@@ -142,9 +152,10 @@ def cmd_super(message):
             with closing(connection.cursor()) as cursor:
                 cursor.execute("SELECT * FROM place")
                 s = '\n'.join( str(x) for x in cursor.fetchall())
+        s = s or 'Nothing....'
         bot.send_message(message.chat.id, s)
     
-    if cmd in [ 'del', 'delete' ]:
+    elif cmd in [ 'del', 'delete' ]:
         if args[2] == 'place':
             placeid = int(args[3])
             print("del place", placeid)
